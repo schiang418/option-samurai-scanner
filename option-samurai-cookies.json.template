@@ -1,0 +1,13 @@
+[
+  {
+    "name": "auth0.is.authenticated",
+    "value": "YOUR_AUTH_VALUE_HERE",
+    "domain": ".optionsamurai.com",
+    "path": "/",
+    "expires": 1767225600,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  }
+]
+

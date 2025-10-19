@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option Samurai Cookie 提取工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4472C4;
+        }
+        .step {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #4472C4;
+        }
+        button {
+            background: #4472C4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #365a9b;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin: 10px 0;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 Option Samurai Cookie 提取工具</h1>
+        
+        <div class="step">
+            <h3>步驟 1: 登入 Option Samurai</h3>
+            <p>在新分頁中打開並登入 <a href="https://new.optionsamurai.com" target="_blank">Option Samurai</a></p>
+        </div>
+        
+        <div class="step">
+            <h3>步驟 2: 提取 Cookies</h3>
+            <p>登入後,點擊下方按鈕自動提取 cookies:</p>
+            <button onclick="extractCookies()">🔑 提取 Cookies</button>
+            <p id="status"></p>
+        </div>
+        
+        <div class="step">
+            <h3>步驟 3: 複製 JSON</h3>
+            <p>將下方的 JSON 內容複製並保存為 <code>option-samurai-cookies.json</code></p>
+            <textarea id="cookiesOutput" readonly placeholder="Cookies 將顯示在這裡..."></textarea>
+            <button onclick="copyCookies()">📋 複製到剪貼簿</button>
+        </div>
+        
+        <div class="step">
+            <h3>步驟 4: 保存文件</h3>
+            <p>將 JSON 內容保存到專案根目錄的 <code>option-samurai-cookies.json</code> 文件中</p>
+            <button onclick="downloadCookies()">💾 下載 JSON 文件</button>
+        </div>
+    </div>
+
+    <script>
+        async function extractCookies() {
+            const statusEl = document.getElementById('status');
+            const outputEl = document.getElementById('cookiesOutput');
+            
+            try {
+                statusEl.innerHTML = '正在提取 cookies...';
+                
+                // Get all cookies for optionsamurai.com
+                const cookies = await cookieStore.getAll();
+                const optionSamuraiCookies = cookies
+                    .filter(c => c.domain && c.domain.includes('optionsamurai'))
+                    .map(c => ({
+                        name: c.name,
+                        value: c.value,
+                        domain: c.domain,
+                        path: c.path || '/',
+                        expires: c.expires ? Math.floor(c.expires / 1000) : Math.floor(Date.now() / 1000) + 86400 * 30,
+                        httpOnly: false,
+                        secure: c.secure || false,
+                        sameSite: c.sameSite || 'Lax'
+                    }));
+                
+                if (optionSamuraiCookies.length === 0) {
+                    statusEl.innerHTML = '<span class="error">❌ 未找到 Option Samurai 的 cookies。請確保您已在另一個分頁中登入。</span>';
+                    return;
+                }
+                
+                const json = JSON.stringify(optionSamuraiCookies, null, 2);
+                outputEl.value = json;
+                
+                statusEl.innerHTML = `<span class="success">✅ 成功提取 ${optionSamuraiCookies.length} 個 cookies!</span>`;
+            } catch (error) {
+                statusEl.innerHTML = `<span class="error">❌ 錯誤: ${error.message}</span>`;
+                console.error('Error extracting cookies:', error);
+            }
+        }
+        
+        function copyCookies() {
+            const outputEl = document.getElementById('cookiesOutput');
+            if (!outputEl.value) {
+                alert('請先提取 cookies!');
+                return;
+            }
+            
+            outputEl.select();
+            document.execCommand('copy');
+            alert('✅ 已複製到剪貼簿!');
+        }
+        
+        function downloadCookies() {
+            const outputEl = document.getElementById('cookiesOutput');
+            if (!outputEl.value) {
+                alert('請先提取 cookies!');
+                return;
+            }
+            
+            const blob = new Blob([outputEl.value], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'option-samurai-cookies.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            alert('✅ 文件已下載!');
+        }
+    </script>
+</body>
+</html>
+

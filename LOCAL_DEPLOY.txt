@@ -1,0 +1,74 @@
+========================================
+Railway 本地部署 - 快速指南
+========================================
+
+完整命令清單（複製貼上即可）：
+
+# 步驟 1: 安裝 Railway CLI
+npm install -g @railway/cli
+
+# 步驟 2: 登錄 Railway
+railway login
+# → 按 Y 打開瀏覽器
+# → 使用 GitHub 登錄
+# → 授權完成
+
+# 步驟 3: 進入項目目錄
+cd option-samurai-scanner
+
+# 步驟 4: 初始化 Railway 項目
+railway init
+# → 輸入項目名稱：option-samurai-scanner
+
+# 步驟 5: 設置環境變量
+railway variables set POLYGON_API_KEY=darsfvapYZJ7ysIzNspvIFgDqDE9VWMt
+railway variables set NODE_ENV=production
+railway variables set PORT=3000
+
+# 步驟 6: 部署應用
+railway up
+# → 等待 2-3 分鐘
+
+# 步驟 7: 生成公開 URL
+railway domain
+
+# 步驟 8: 查看狀態
+railway status
+
+# 步驟 9: 查看日誌（可選）
+railway logs
+
+========================================
+常用命令：
+========================================
+
+查看日誌：railway logs
+查看狀態：railway status
+重新部署：railway up
+查看變量：railway variables
+打開控制台：railway open
+
+========================================
+預期結果：
+========================================
+
+✅ 獲得一個公開 URL
+✅ 24/7 運行
+✅ 自動 HTTPS
+✅ 每月 $5 免費額度
+
+========================================
+故障排除：
+========================================
+
+問題：部署失敗
+解決：railway logs（查看錯誤）
+
+問題：無法訪問
+解決：railway domain（確認 URL）
+
+問題：API 失敗
+解決：railway variables（檢查密鑰）
+
+========================================
+
