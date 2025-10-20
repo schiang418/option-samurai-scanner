@@ -94,9 +94,50 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * 直接獲取股票價格 (帶重試機制)
+ * 使用 Yahoo Finance 獲取實時股票價格
  */
-async function getStockPrice(ticker: string, retries = 7): Promise<{ price: number; change_percent: number } | null> {
+async function getStockPriceFromYahoo(ticker: string): Promise<{ price: number; change_percent: number } | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`;
+    const response = await axios.get(url, {
+      params: { interval: '1d', range: '1d' },
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 10000
+    });
+    
+    if (response.data?.chart?.result?.[0]) {
+      const result = response.data.chart.result[0];
+      const meta = result.meta;
+      
+      const price = meta.regularMarketPrice || meta.chartPreviousClose;
+      const prev_close = meta.previousClose || meta.chartPreviousClose;
+      
+      if (price && prev_close) {
+        const change_percent = (price - prev_close) / prev_close;
+        console.log(`  ✓ ${ticker}: $${price.toFixed(2)} (${(change_percent * 100).toFixed(2)}%) [Yahoo Finance - Real-time]`);
+        return { price, change_percent };
+      }
+    }
+  } catch (error: any) {
+    console.log(`  ⚠️ Yahoo Finance failed for ${ticker}: ${error.message}`);
+  }
+  return null;
+}
+
+/**
+ * 直接獲取股票價格 (帶重試機制)
+ * 優先使用 Yahoo Finance 實時價格，失敗則回退到 Polygon.io 前一日收盤價
+ */
+async function getStockPrice(ticker: string, retries = 5): Promise<{ price: number; change_percent: number } | null> {
+  // 首先嘗試 Yahoo Finance 獲取實時價格
+  const yahooPrice = await getStockPriceFromYahoo(ticker);
+  if (yahooPrice) {
+    return yahooPrice;
+  }
+  
+  // Yahoo Finance 失敗，回退到 Polygon.io
+  console.log(`  ⏳ Falling back to Polygon.io for ${ticker}...`);
+  
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       // 添加延遲以避免 API 速率限制
@@ -116,6 +157,7 @@ async function getStockPrice(ticker: string, retries = 7): Promise<{ price: numb
         const price = result.c; // close price
         const open = result.o;
         const change_percent = open ? ((price - open) / open) : 0;
+        console.log(`  ✓ ${ticker}: $${price.toFixed(2)} [Polygon.io - Previous Close]`);
         return { price, change_percent };
       }
     } catch (error: any) {
@@ -123,9 +165,7 @@ async function getStockPrice(ticker: string, retries = 7): Promise<{ price: numb
       const errorMsg = isRateLimit ? 'Rate limit exceeded' : error.message;
       
       if (attempt < retries) {
-        // 如果是速率限制，使用更長的延遲
-        const baseDelay = isRateLimit ? 5000 : 2000;
-        const nextDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), 30000);
+        const nextDelay = Math.min(2000 * Math.pow(2, attempt - 1), 16000);
         console.log(`  ⚠️ ${ticker} stock price API failed (attempt ${attempt}/${retries}): ${errorMsg}`);
         console.log(`  ⏳ Waiting ${nextDelay}ms before retry...`);
       } else {
@@ -172,54 +212,37 @@ function estimateStockPrice(options: OptionData[]): number | null {
 }
 
 /**
- * 獲取選擇權數據(帶分頁和重試機制)
+ * 獲取選擇權數據(帶分頁)
  */
-async function getAllOptions(ticker: string, maxResults: number = 2000, retries: number = 5): Promise<OptionData[]> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      // 添加延遲以避免 API 速率限制
-      if (attempt > 1) {
-        const delayTime = Math.min(3000 * Math.pow(2, attempt - 2), 20000);
-        console.log(`  ⏳ ${ticker} options API retry ${attempt}/${retries}, waiting ${delayTime}ms...`);
-        await delay(delayTime);
-      }
+async function getAllOptions(ticker: string, maxResults: number = 2000): Promise<OptionData[]> {
+  const allOptions: OptionData[] = [];
+  let url = `${BASE_URL}/v3/snapshot/options/${ticker}`;
+  let params: any = { apiKey: API_KEY, limit: 250 };
+  
+  try {
+    while (allOptions.length < maxResults) {
+      const response = await axios.get(url, { params });
+      const data = response.data;
       
-      const allOptions: OptionData[] = [];
-      let url = `${BASE_URL}/v3/snapshot/options/${ticker}`;
-      let params: any = { apiKey: API_KEY, limit: 250 };
+      const results = data.results || [];
+      if (results.length === 0) break;
       
-      while (allOptions.length < maxResults) {
-        const response = await axios.get(url, { params, timeout: 15000 });
-        const data = response.data;
-        
-        const results = data.results || [];
-        if (results.length === 0) break;
-        
-        allOptions.push(...results);
-        
-        const nextUrl = data.next_url;
-        if (!nextUrl) break;
-        
-        url = nextUrl;
-        params = { apiKey: API_KEY };
-        
-        await delay(100);
-      }
+      allOptions.push(...results);
       
-      return allOptions;
-    } catch (error: any) {
-      const isRateLimit = error.response?.status === 429;
-      const errorMsg = isRateLimit ? 'Rate limit exceeded' : error.message;
+      const nextUrl = data.next_url;
+      if (!nextUrl) break;
       
-      if (attempt < retries) {
-        console.log(`  ⚠️ ${ticker} options API failed (attempt ${attempt}/${retries}): ${errorMsg}`);
-      } else {
-        console.log(`  ❌ ${ticker} options API failed after ${retries} attempts: ${errorMsg}`);
-        return [];
-      }
+      url = nextUrl;
+      params = { apiKey: API_KEY };
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
+    
+    return allOptions;
+  } catch (error) {
+    console.error(`Error fetching options for ${ticker}:`, error);
+    return [];
   }
-  return [];
 }
 
 /**
@@ -275,8 +298,6 @@ async function findBestStrategy(ticker: string): Promise<{ strategy: Strategy | 
     iv: number;
   }> = [];
   
-  let missingPriceCount = 0; // 追蹤缺少價格數據的選項數量
-  
   // 收集符合條件的 PUT
   for (const option of options) {
     try {
@@ -307,10 +328,7 @@ async function findBestStrategy(ticker: string): Promise<{ strategy: Strategy | 
       const bid = option.last_quote?.bid || closePrice;
       const ask = option.last_quote?.ask || closePrice;
       
-      if (!bid || !ask) {
-        missingPriceCount++;
-        continue;
-      }
+      if (!bid || !ask) continue;
       
       const iv = option.implied_volatility || 0;
       
@@ -331,10 +349,6 @@ async function findBestStrategy(ticker: string): Promise<{ strategy: Strategy | 
   }
   
   if (candidatePuts.length === 0) {
-    if (missingPriceCount > 0) {
-      console.log(`  ❌ ${ticker} found ${missingPriceCount} PUTs matching criteria but missing Bid/Ask prices`);
-      return { strategy: null, failureReason: 'missing_price_data' };
-    }
     console.log(`  ❌ ${ticker} no candidate PUTs found`);
     return { strategy: null, failureReason: 'no_candidate_puts' };
   }
@@ -452,7 +466,7 @@ export async function scanMarket(tickers: string[]): Promise<ScanResult> {
     
     // 添加延遲以避免 API 速率限制
     if (i > 0) {
-      await delay(2500); // 每個股票之間延遲 2.5秒
+      await delay(1500); // 每個股票之間延遲 1.5秒
     }
     
     try {
@@ -466,7 +480,6 @@ export async function scanMarket(tickers: string[]): Promise<ScanResult> {
         const errorMessages: Record<string, { type: 'api_failed' | 'no_strategy' | 'low_volume', message: string }> = {
           'options_api_failed': { type: 'api_failed', message: '選擇權 API 失敗' },
           'stock_price_api_failed': { type: 'api_failed', message: '股票價格 API 失敗' },
-          'missing_price_data': { type: 'api_failed', message: 'API 缺少 Bid/Ask 價格數據' },
           'low_volume': { type: 'low_volume', message: '總交易量低於 5,000' },
           'no_candidate_puts': { type: 'no_strategy', message: '無符合篩選條件的 PUT 選擇權' },
           'no_valid_spreads': { type: 'no_strategy', message: '無符合條件的價差組合' }
@@ -508,4 +521,3 @@ export const DEFAULT_TICKERS = [
   'LLY', 'META', 'MSTR', 'MU', 'NFLX', 'NVDA', 'OKLO', 'ORCL', 'PLTR',
   'SMH', 'TSLA', 'TSM'
 ];
-
